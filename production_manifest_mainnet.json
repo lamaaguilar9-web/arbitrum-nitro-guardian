@@ -1,0 +1,27 @@
+{
+  "production_target": "Arbitrum One (Nitro Mainnet)",
+  "chain_id": 42161,
+  "rpc_endpoint": "https://arb1.arbitrum.io/rpc",
+  "oracle_configurations": {
+    "sequencer_uptime_feed_mainnet": "0xFdB631F5EE196F0ed6FAa767959853A9F217697D",
+    "grace_period_enforced": 3600,
+    "status_interpretation": "answer == 0 (UP), answer == 1 (DOWN)"
+  },
+  "access_control_segregation": {
+    "PAUSER_ROLE": {
+      "assigned_to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "privilege_scope": "Granular pausePool() ONLY. No asset movement, no unpause."
+    },
+    "UNPAUSER_ROLE": {
+      "assigned_to": "0x1b793E4923774423457917228833983216892416",
+      "privilege_scope": "Manual unpausePool() following 3/5 human sign-off."
+    },
+    "DEFAULT_ADMIN_ROLE": {
+      "assigned_to": "0x1b793E4923774423457917228833983216892416",
+      "deployer_renunciation": "Confirmed: Deployer renounces all admin rights post-deployment."
+    }
+  },
+  "anti_sybil_controls": "Enforced: LP share transfers frozen during pause/wind-down.",
+  "invariant_arithmetic": "FullMath 512-bit mulDiv (zero overflow on 10M WETH x 30B Token).",
+  "emergency_wind_down": "24h timeout permits orderly exits ONLY; zero auto-unpause."
+}
