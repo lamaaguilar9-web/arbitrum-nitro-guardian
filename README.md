@@ -7,6 +7,13 @@
 [![Smart Contracts](https://img.shields.io/badge/Security-OpenZeppelin%20AccessControl-indigo.svg)](https://openzeppelin.com/)
 [![Mitigation SLA](https://img.shields.io/badge/Mitigation%20SLA-Sub--45ms-10b981.svg)](http://2.25.121.124:5056)
 [![License](https://img.shields.io/badge/License-MIT%20%2F%20AS--IS-blue.svg)](./LEGAL.md)
+[![Live Demo](https://img.shields.io/badge/Loom-Video%20Walkthrough-blueviolet.svg?logo=loom)](https://www.loom.com/share/9699ddd05d224ef980577a4ded396bfb)
+
+---
+
+### 🎥 Official Video Walkthrough & Live Architecture Demo
+> **[Watch Demo: Arbitrum Nitro Guardián, seguridad no custodial (Loom Walkthrough)](https://www.loom.com/share/9699ddd05d224ef980577a4ded396bfb)**  
+> *Demonstrating sub-45ms mitigation SLA, Camelot DEX Algebra AMM protection, GMX v2 collateral conservation, and non-custodial OpenZeppelin AccessControl governance.*
 
 ---
 
