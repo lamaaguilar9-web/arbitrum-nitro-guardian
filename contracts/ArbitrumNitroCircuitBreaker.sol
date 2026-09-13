@@ -5,17 +5,31 @@ import "./libraries/FullMath.sol";
 import "./libraries/InvariantChecker.sol";
 
 /**
- * @title ArbitrumNitroCircuitBreaker
- * @notice Institutional-Grade Dual-Tier Circuit Breaker for Arbitrum One (Nitro).
- * 
- * AUDIT V3 REFACTORING RESOLUTIONS:
- * 1. ZERO ARITHMETIC OVERFLOW: FullMath.mulDiv (512-bit precision) prevents phantom overflow on high-liquidity pools.
- * 2. ANTI-SYBIL SNAPSHOT: Prohibits token transfers during pause, ensuring snapshot integrity and rate-limiter enforcement.
- * 3. DETERMINISTIC TIME-DERIVED EPOCHS: currentEpoch is calculated strictly from (block.timestamp - pausedTimestamp) / EPOCH_DURATION.
- * 4. INTERNAL INVARIANT HOOK: InvariantChecker library embeds directly into pool bytecode for sub-200 gas in-memory execution.
- * 5. EMERGENCY WIND-DOWN: 24h timeout transitions to WIND_DOWN (orderly exits ONLY; zero trading resumption).
+ * @title ISequencerUptimeFeed
+ * @notice Canonical Chainlink interface for Arbitrum Nitro Sequencer Uptime status.
  */
+interface ISequencerUptimeFeed {
+    function latestRoundData() external view returns (
+        uint80 roundId,
+        int256 answer, // 0 = Active, 1 = Down
+        uint256 startedAt,
+        uint256 updatedAt,
+        uint80 answeredInRound
+    );
+}
 
+/**
+ * @title ArbitrumNitroCircuitBreaker (Production Grade)
+ * @notice Production-grade Dual-Tier Circuit Breaker for Arbitrum One (Nitro) & Sepolia.
+ * 
+ * PRODUCTION REQUIREMENTS IMPLEMENTED:
+ * 1. CHAINLINK SEQUENCER UPTIME FEED: Actively monitors sequencer status (answer == 0).
+ * 2. MANDATORY GRACE PERIOD (3600s / 1 Hour): Prevents burst liquidations/execution after outages.
+ * 3. 512-BIT FULLMATH PRECISION: Zero arithmetic overflow on 10M WETH x 30B Token reserves.
+ * 4. ANTI-SYBIL LP LOCKS: LP share transfers frozen during pause/wind-down to seal snapshots.
+ * 5. EMERGENCY WIND-DOWN & DETERMINISTIC TIME-DERIVED EPOCHS: (timestamp - pausedTime) / 24h.
+ * 6. FACTUAL CONTROL & MiCA MITIGATION: MAX_CONSECUTIVE_PAUSES = 2 and DAO Timelock transition.
+ */
 contract ArbitrumNitroCircuitBreaker {
     using FullMath for uint256;
 
@@ -34,6 +48,9 @@ contract ArbitrumNitroCircuitBreaker {
     uint256 public constant MAX_CONSECUTIVE_PAUSES = 2;
     uint256 public constant PRO_RATA_RATE_LIMIT_BPS = 1000; // 10% per epoch per user
 
+    // Chainlink Sequencer Uptime Feed Constants
+    uint256 public constant SEQUENCER_GRACE_PERIOD = 3600; // 1 hour post-outage grace window
+
     struct PoolStatus {
         PoolState state;
         uint256 pausedTimestamp;
@@ -45,16 +62,10 @@ contract ArbitrumNitroCircuitBreaker {
     address public governanceSafe;
     address public guardianBot;
     address public daoTimelock;
+    address public sequencerUptimeFeed; // Chainlink Uptime Feed contract
 
     mapping(address => PoolStatus) public poolInfo;
-
-    // Epoch tracking: pool => epochIndex => user => amountWithdrawn
     mapping(address => mapping(uint256 => mapping(address => uint256))) public userEpochWithdrawn;
-    // Snapshot balance: pool => user => balanceAtPause
-    // NOTE ON REBASING TOKENS (AUDIT OBSERVATION A):
-    // For yield-bearing/rebasing tokens (e.g. wstETH, aTokens), userSnapshotBalance records
-    // the immutable raw share ratio (underlying pool shares), preserving pro-rata entitlement
-    // independent of external nominal balance rebase fluctuations during WIND_DOWN.
     mapping(address => mapping(address => uint256)) public userSnapshotBalance;
 
     mapping(bytes32 => mapping(address => bool)) private _roles;
@@ -63,18 +74,20 @@ contract ArbitrumNitroCircuitBreaker {
     event PoolEmergencyUnpaused(address indexed pool, address indexed caller, uint256 timestamp);
     event ProRataWithdrawalExecuted(address indexed pool, address indexed user, uint256 amount, uint256 epoch);
     event GovernanceMigratedToTimelock(address indexed oldGov, address indexed newTimelock);
+    event SequencerFeedUpdated(address indexed newFeed);
 
     modifier onlyRole(bytes32 role) {
         require(_roles[role][msg.sender], "CircuitBreaker: caller lacks required role");
         _;
     }
 
-    constructor(address _governanceSafe, address _botAddress) {
+    constructor(address _governanceSafe, address _botAddress, address _sequencerFeed) {
         require(_governanceSafe != address(0), "Invalid safe address");
         require(_botAddress != address(0), "Invalid bot address");
 
         governanceSafe = _governanceSafe;
         guardianBot = _botAddress;
+        sequencerUptimeFeed = _sequencerFeed;
 
         _roles[DEFAULT_ADMIN_ROLE][_governanceSafe] = true;
         _roles[UNPAUSER_ROLE][_governanceSafe] = true;
@@ -82,7 +95,50 @@ contract ArbitrumNitroCircuitBreaker {
     }
 
     // =========================================================================
-    // 1. ASYMMETRIC EMERGENCY PAUSE
+    // 1. REQUERIMIENTO 3: CHAINLINK SEQUENCER UPTIME FEED & GRACE PERIOD
+    // =========================================================================
+
+    function setSequencerUptimeFeed(address _newFeed) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        sequencerUptimeFeed = _newFeed;
+        emit SequencerFeedUpdated(_newFeed);
+    }
+
+    /**
+     * @notice Validates that Arbitrum Nitro Sequencer is UP and has passed the 1-hour grace period.
+     * @return isHealthy True if Sequencer is active and grace period has elapsed.
+     */
+    function isSequencerHealthy() public view returns (bool) {
+        if (sequencerUptimeFeed == address(0)) {
+            return true; // Testnet fallback if feed not configured
+        }
+
+        try ISequencerUptimeFeed(sequencerUptimeFeed).latestRoundData() returns (
+            uint80,
+            int256 answer,
+            uint256 startedAt,
+            uint256,
+            uint80
+        ) {
+            // answer == 0: Sequencer is UP
+            // answer == 1: Sequencer is DOWN
+            if (answer == 1) {
+                return false;
+            }
+
+            // Enforce mandatory 3600-second (1 hour) grace period post-outage
+            uint256 timeSinceUp = block.timestamp - startedAt;
+            if (timeSinceUp < SEQUENCER_GRACE_PERIOD) {
+                return false;
+            }
+
+            return true;
+        } catch {
+            return false; // Fail-safe: if oracle call fails, assume unhealthy
+        }
+    }
+
+    // =========================================================================
+    // 2. ASYMMETRIC EMERGENCY PAUSE & WIND-DOWN
     // =========================================================================
 
     function pausePool(address pool, string calldata reason) external onlyRole(PAUSER_ROLE) {
@@ -102,6 +158,8 @@ contract ArbitrumNitroCircuitBreaker {
 
     function unpausePool(address pool) external onlyRole(UNPAUSER_ROLE) {
         require(pool != address(0), "Invalid pool address");
+        require(isSequencerHealthy(), "Cannot unpause: Sequencer is DOWN or in Grace Period");
+
         PoolStatus storage status = poolInfo[pool];
         require(status.state != PoolState.OPERATIONAL, "Pool already operational");
 
@@ -114,26 +172,17 @@ contract ArbitrumNitroCircuitBreaker {
         emit PoolEmergencyUnpaused(pool, msg.sender, block.timestamp);
     }
 
-    // =========================================================================
-    // 2. VECTOR 2: EMERGENCY WIND-DOWN & DETERMINISTIC TIME-DERIVED EPOCHS
-    // =========================================================================
-
     function getPoolState(address pool) public view returns (PoolState) {
         PoolStatus memory status = poolInfo[pool];
         if (status.state == PoolState.OPERATIONAL) {
             return PoolState.OPERATIONAL;
         }
-        // 24h timeout transitions to WIND_DOWN (NO AUTOMATIC UNPAUSE)
         if (block.timestamp > status.pausedTimestamp + MAX_PAUSE_DURATION) {
             return PoolState.EMERGENCY_WIND_DOWN;
         }
         return status.state;
     }
 
-    /**
-     * @notice Computes current epoch deterministically from block.timestamp.
-     * Prevents manual manipulation or stuck epoch states.
-     */
     function getCurrentEpoch(address pool) public view returns (uint256) {
         PoolStatus memory status = poolInfo[pool];
         if (status.state == PoolState.OPERATIONAL || status.pausedTimestamp == 0) {
@@ -143,12 +192,19 @@ contract ArbitrumNitroCircuitBreaker {
     }
 
     function isOperationPermitted(address pool, bytes4 operationSelector) external view returns (bool) {
+        // Sequencer health check: If sequencer is down or in grace period, block new operations
+        if (!isSequencerHealthy()) {
+            // During grace period, only withdrawals/repayments allowed
+            if (operationSelector == bytes4(0x2e1a7d4d) || operationSelector == bytes4(0x0e752702)) {
+                return true;
+            }
+            return false;
+        }
+
         PoolState currentState = getPoolState(pool);
         if (currentState == PoolState.OPERATIONAL) return true;
         if (currentState == PoolState.EMERGENCY_PAUSED) return false;
 
-        // In WIND_DOWN: withdraw (0x2e1a7d4d), redeem (0xdb006a75), repay (0x0e752702) are permitted.
-        // Swaps, borrows, and deposits REMAIN STRICTLY HALTED.
         if (currentState == PoolState.EMERGENCY_WIND_DOWN) {
             if (operationSelector == bytes4(0x2e1a7d4d) || 
                 operationSelector == bytes4(0xdb006a75) || 
@@ -161,13 +217,9 @@ contract ArbitrumNitroCircuitBreaker {
     }
 
     // =========================================================================
-    // 3. VECTOR 2 & 3: ANTI-SYBIL PRO-RATA ESCAPE HATCH (WITH SEALED SNAPSHOT)
+    // 3. PRO-RATA ESCAPE HATCH WITH 512-BIT MATH
     // =========================================================================
 
-    /**
-     * @notice Registers user snapshot securely upon first access.
-     * Guaranteed Sybil-resistant because pool share transfers are frozen while paused!
-     */
     function checkProRataWithdrawalQuota(
         address pool,
         address user,
@@ -182,7 +234,6 @@ contract ArbitrumNitroCircuitBreaker {
             userSnapshotBalance[pool][user] = currentBalance;
         }
 
-        // 10% pro-rata quota per epoch: FullMath.mulDiv(snap, 1000, 10000)
         uint256 maxAllowedThisEpoch = FullMath.mulDiv(snap, PRO_RATA_RATE_LIMIT_BPS, 10000);
         uint256 alreadyWithdrawn = userEpochWithdrawn[pool][epoch][user];
 
@@ -194,7 +245,7 @@ contract ArbitrumNitroCircuitBreaker {
     }
 
     // =========================================================================
-    // 4. VECTOR 5: MiCA & DAO TIMELOCK TRANSITION
+    // 4. MiCA & DAO TIMELOCK TRANSITION
     // =========================================================================
 
     function transferGovernanceToTimelock(address _daoTimelock) external onlyRole(DEFAULT_ADMIN_ROLE) {

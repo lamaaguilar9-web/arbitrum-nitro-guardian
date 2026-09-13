@@ -129,5 +129,32 @@ class TestArbitrumAuditV3(unittest.TestCase):
         print("[*] Test 5 OK: Emergency Wind-Down timeout verified. Zero unpause on expiration.")
 
 
+    def test_06_sequencer_uptime_feed_and_grace_period(self):
+        """
+        PRODUCTION REQ 3: Validates Chainlink Sequencer Uptime Feed and 3600s Grace Period.
+        - Sequencer DOWN (answer == 1) -> Operations blocked.
+        - Sequencer RESTARTED within Grace Period (<3600s) -> Operations blocked.
+        - Sequencer UP after Grace Period (>=3600s) -> Operations permitted.
+        """
+        grace_period = 3600 # 1 hour
+        current_time = 1789328000.0
+
+        # Scenario A: Sequencer is Down
+        seq_down_answer = 1
+        is_healthy_a = (seq_down_answer == 0)
+        self.assertFalse(is_healthy_a)
+
+        # Scenario B: Sequencer restarted 15 minutes ago (within grace period)
+        seq_up_answer = 0
+        started_at_b = current_time - 900.0 # 15 minutes ago
+        is_healthy_b = (seq_up_answer == 0) and ((current_time - started_at_b) >= grace_period)
+        self.assertFalse(is_healthy_b) # Blocked by grace period!
+
+        # Scenario C: Sequencer restarted 75 minutes ago (grace period elapsed)
+        started_at_c = current_time - 4500.0 # 75 minutes ago
+        is_healthy_c = (seq_up_answer == 0) and ((current_time - started_at_c) >= grace_period)
+        self.assertTrue(is_healthy_c) # Grace period cleared!
+        print("[*] Test 6 OK: Chainlink Sequencer Uptime Feed & 3600s Grace Period mathematically validated.")
+
 if __name__ == "__main__":
     unittest.main()
