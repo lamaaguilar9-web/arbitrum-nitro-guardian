@@ -13,6 +13,9 @@ import requests
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ArbitrumTelemetrySensor")
 
+# Chainlink Sequencer Uptime Feed on Arbitrum One (Audit Observation B)
+CHAINLINK_SEQUENCER_UPTIME_FEED = "0xFdB631F5EE196F0ed6FAa767959853A9F217697D"
+
 ARBITRUM_RPC_ENDPOINTS = [
     "https://arb1.arbitrum.io/rpc",            # Primary: Nitro Dedicated Sequencer Gateway
     "https://arbitrum-one-rpc.publicnode.com", # Secondary: Redundant High-Availability Fallback

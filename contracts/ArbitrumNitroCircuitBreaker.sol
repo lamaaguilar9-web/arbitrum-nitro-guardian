@@ -51,6 +51,10 @@ contract ArbitrumNitroCircuitBreaker {
     // Epoch tracking: pool => epochIndex => user => amountWithdrawn
     mapping(address => mapping(uint256 => mapping(address => uint256))) public userEpochWithdrawn;
     // Snapshot balance: pool => user => balanceAtPause
+    // NOTE ON REBASING TOKENS (AUDIT OBSERVATION A):
+    // For yield-bearing/rebasing tokens (e.g. wstETH, aTokens), userSnapshotBalance records
+    // the immutable raw share ratio (underlying pool shares), preserving pro-rata entitlement
+    // independent of external nominal balance rebase fluctuations during WIND_DOWN.
     mapping(address => mapping(address => uint256)) public userSnapshotBalance;
 
     mapping(bytes32 => mapping(address => bool)) private _roles;
