@@ -8,6 +8,12 @@ Validates all 5 Auditor Vectors:
 5. Realistic SLA & Dynamic P95 Gas Escalation: +75 Gwei tips under extreme market panic.
 """
 
+import os
+import sys
+sys_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if sys_root not in sys.path:
+    sys.path.insert(0, sys_root)
+
 import time
 import unittest
 from telemetry_sensor import ArbitrumTelemetrySensor
