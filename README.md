@@ -5,7 +5,7 @@
 [![Arbitrum One](https://img.shields.io/badge/Network-Arbitrum%20One%20Nitro-00a3ff.svg?logo=arbitrum)](https://arbitrum.io/)
 [![Execution Model](https://img.shields.io/badge/Sequencer-FCFS%20Feed%20(No%20Mempool)-06b6d4.svg)](https://docs.arbitrum.io/)
 [![Smart Contracts](https://img.shields.io/badge/Security-OpenZeppelin%20AccessControl-indigo.svg)](https://openzeppelin.com/)
-[![Mitigation SLA](https://img.shields.io/badge/Mitigation%20SLA-Sub--45ms-10b981.svg)](http://2.25.121.124:5056)
+[![Mitigation SLA](https://img.shields.io/badge/Mitigation%20SLA-Sub--45ms-10b981.svg)](#live-production-sentinel)
 [![License](https://img.shields.io/badge/License-MIT%20%2F%20AS--IS-blue.svg)](./LEGAL.md)
 [![Live Demo](https://img.shields.io/badge/Loom-Video%20Walkthrough-blueviolet.svg?logo=loom)](https://www.loom.com/share/9699ddd05d224ef980577a4ded396bfb)
 
@@ -126,8 +126,9 @@ The software is governed by **[LEGAL.md](./LEGAL.md)**, incorporating mandatory 
 ---
 
 ## 🖥️ Live Production Sentinel
-
-* **Live Dashboard URL:** [http://2.25.121.124:5056](http://2.25.121.124:5056)
-* **Dedicated Port:** `5056`
+ 
+* **Access Model:** Localhost Loopback / Secure SSH Tunnel (`http://127.0.0.1:5056`)
+* **Tunnel Command:** `ssh -L 5056:127.0.0.1:5056 root@<HOST_IP>`
+* **Dedicated Port:** `5056` (Confined to loopback per 7-Layer Security Matrix)
 * **Architecture:** Standalone Python / FastAPI / Tailwind CSS / Web3
 * **Repository:** [https://github.com/lamaaguilar9-web/arbitrum-nitro-guardian](https://github.com/lamaaguilar9-web/arbitrum-nitro-guardian)
