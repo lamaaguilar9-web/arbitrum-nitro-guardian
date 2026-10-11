@@ -1,8 +1,7 @@
 """
 Arbitrum Nitro Guardian - Dedicated L2 On-Chain Telemetry Sensor
-Monitors Arbitrum One Nitro RPC endpoints with automated high-availability failover.
-Tracks block height, L2 sequencer batch latency, gas pricing, and pool reserves.
-Compliant with institutional redundancy guidelines: Primary + Secondary automatic failover.
+Monitors Arbitrum One Nitro RPC endpoints with automated failover.
+Tracks block height, gas pricing, and demo pool catalogs.
 """
 
 import time
@@ -13,7 +12,7 @@ import requests
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ArbitrumTelemetrySensor")
 
-# Chainlink Sequencer Uptime Feed on Arbitrum One (Audit Observation B)
+# Chainlink Sequencer Uptime Feed on Arbitrum One (verified on-chain)
 CHAINLINK_SEQUENCER_UPTIME_FEED = "0xFdB631F5EE196F0ed6FAa767959853A9F217697D"
 
 ARBITRUM_RPC_ENDPOINTS = [
@@ -32,7 +31,7 @@ class ArbitrumTelemetrySensor:
         self.session.headers.update({"Content-Type": "application/json"})
         self.failover_history: List[Dict[str, Any]] = []
 
-        # Dedicated Arbitrum Pools (Camelot AMM & GMX v2 Vault)
+        # Catálogo Estático de Demostración (etiquetado honestamente; no es telemetría en streaming)
         self.pools = {
             "Camelot_WETH_ARB": {
                 "pool_name": "Camelot_WETH_ARB",
@@ -40,6 +39,8 @@ class ArbitrumTelemetrySensor:
                 "chain": "Arbitrum One",
                 "protocol": "Camelot DEX",
                 "protocol_type": "AMM_ALGEBRA",
+                "catalog_type": "CATÁLOGO ESTÁTICO DE DEMO — NO ES TELEMETRÍA",
+                "telemetry_source": "STATIC_CATALOG_ESTIMATE",
                 "token0": "WETH",
                 "token1": "ARB",
                 "reserve0": 3400.0,
@@ -53,6 +54,8 @@ class ArbitrumTelemetrySensor:
                 "chain": "Arbitrum One",
                 "protocol": "GMX v2",
                 "protocol_type": "INDEX_VAULT",
+                "catalog_type": "CATÁLOGO ESTÁTICO DE DEMO — NO ES TELEMETRÍA",
+                "telemetry_source": "STATIC_CATALOG_ESTIMATE",
                 "token0": "WETH/BTC",
                 "token1": "USDC",
                 "collateral_usd": 42000000.0,
@@ -66,6 +69,8 @@ class ArbitrumTelemetrySensor:
                 "chain": "Arbitrum One",
                 "protocol": "Uniswap v3",
                 "protocol_type": "AMM_CONCENTRATED",
+                "catalog_type": "CATÁLOGO ESTÁTICO DE DEMO — NO ES TELEMETRÍA",
+                "telemetry_source": "STATIC_CATALOG_ESTIMATE",
                 "token0": "USDC",
                 "token1": "USDT",
                 "reserve0": 14200000.0,
@@ -119,11 +124,44 @@ class ArbitrumTelemetrySensor:
                 # Non-200 or no result -> Failover
                 self.trigger_manual_failover()
             except Exception as e:
-                logger.debug(f"[Arbitrum] Error on {current_url}: {e}. Triggering failover.")
+                logger.warning(f"[Arbitrum] Error on {current_url}: {e}. Triggering failover.")
                 self.trigger_manual_failover()
             attempts += 1
 
         return None, 999.0, self.get_active_rpc_url()
+
+    def get_chainlink_sequencer_status(self) -> Dict[str, Any]:
+        """
+        K-2: Queries live Chainlink Arbitrum Sequencer Uptime Feed (0xFdB631F5EE196F0ed6FAa767959853A9F217697D).
+        latestRoundData() selector = 0xfeaf968c
+        Returns answer == 0 (UP) or answer == 1 (DOWN).
+        """
+        payload = {
+            "to": CHAINLINK_SEQUENCER_UPTIME_FEED,
+            "data": "0xfeaf968c"
+        }
+        res, _, _ = self._post_rpc("eth_call", [payload, "latest"])
+        if res and isinstance(res, str) and len(res) >= 130:
+            try:
+                answer_hex = res[2 + 64:2 + 128]
+                answer = int(answer_hex, 16)
+                started_at_hex = res[2 + 128:2 + 192] if len(res) >= 194 else "0x0"
+                started_at = int(started_at_hex, 16)
+                status_desc = "UP" if answer == 0 else "DOWN"
+                return {
+                    "status": status_desc,
+                    "answer": answer,
+                    "started_at": started_at,
+                    "verified_onchain": True
+                }
+            except Exception as e:
+                logger.warning(f"Error decoding Chainlink sequencer response: {e}")
+        return {
+            "status": "UNAVAILABLE",
+            "answer": None,
+            "started_at": None,
+            "verified_onchain": False
+        }
 
     def get_latest_block_summary(self) -> Dict[str, Any]:
         result, latency_ms, endpoint_used = self._post_rpc("eth_getBlockByNumber", ["latest", True])
@@ -137,6 +175,9 @@ class ArbitrumTelemetrySensor:
             base_fee_hex = result.get("baseFeePerGas", "0x0")
             base_fee_gwei = round(int(base_fee_hex, 16) / 1e9, 4) if base_fee_hex else 0.01
 
+            seq_info = self.get_chainlink_sequencer_status()
+            seq_status = f"HEALTHY_ACTIVE ({seq_info['status']})" if seq_info.get("verified_onchain") else "RPC_FALLBACK"
+
             return {
                 "status": "online",
                 "network": "Arbitrum One Nitro (L2)",
@@ -145,8 +186,8 @@ class ArbitrumTelemetrySensor:
                 "gas_used": gas_used,
                 "gas_utilization_pct": round((gas_used / max(gas_limit, 1)) * 100, 2),
                 "base_fee_gwei": base_fee_gwei,
-                "sequencer_batch_delay_ms": 120.0,
-                "sequencer_status": "HEALTHY_ACTIVE (FCFS Feed)",
+                "sequencer_status": seq_status,
+                "chainlink_sequencer_verified": seq_info.get("verified_onchain", False),
                 "rpc_endpoint": endpoint_used,
                 "rpc_tier": "PRIMARY_DEDICATED" if is_primary else "FAILOVER_SECONDARY",
                 "rpc_latency_ms": latency_ms,
@@ -154,25 +195,30 @@ class ArbitrumTelemetrySensor:
                 "timestamp": time.time()
             }
 
-        # Resilient fallback state
+        # K-2: Honest fallback state when all RPC endpoints fail (CERO números inventados)
         return {
-            "status": "online",
+            "status": "OFFLINE",
             "network": "Arbitrum One Nitro (L2)",
-            "block_number": 504820100,
-            "tx_count": 84,
-            "gas_used": 1540000,
-            "gas_utilization_pct": 12.4,
-            "base_fee_gwei": 0.01,
-            "sequencer_batch_delay_ms": 120.0,
-            "sequencer_status": "HEALTHY_ACTIVE (FCFS Feed)",
-            "rpc_endpoint": endpoint_used,
-            "rpc_tier": "PRIMARY_DEDICATED" if is_primary else "FAILOVER_SECONDARY",
-            "rpc_latency_ms": 110.0,
+            "block_number": None,
+            "tx_count": None,
+            "gas_used": None,
+            "gas_utilization_pct": None,
+            "base_fee_gwei": None,
+            "sequencer_status": "OFFLINE",
+            "chainlink_sequencer_verified": False,
+            "rpc_endpoint": None,
+            "rpc_tier": "OFFLINE",
+            "rpc_latency_ms": None,
             "failover_count": len(self.failover_history),
+            "error": "ALL_RPC_ENDPOINTS_FAILED",
             "timestamp": time.time()
         }
 
     def sample_monitored_pool(self, pool_name: str) -> Dict[str, Any]:
+        """
+        Returns pool state from catalog.
+        NOTE: Catalog values are static baseline demo references, not live polled on-chain reserves.
+        """
         pool = self.pools.get(pool_name)
         if not pool:
             pool = list(self.pools.values())[0]

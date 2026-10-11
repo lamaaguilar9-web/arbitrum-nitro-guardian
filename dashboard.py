@@ -1,5 +1,5 @@
 """
-Arbitrum Nitro Guardian - Institutional L2 Security Dashboard (Port 5056)
+Arbitrum Nitro Guardian - L2 Security Dashboard (Port 5056)
 Monitors Arbitrum One Nitro RPC with Automated Failover, EIP-1559 Gas Escalation,
 OpenZeppelin Asymmetric Role Segregation, and Mandatory Legal Disclaimers.
 """
@@ -16,7 +16,7 @@ from risk_engine import ArbitrumRiskEngine
 from circuit_breaker import ArbitrumCircuitBreaker
 from simulate_exploit import simulate_arbitrum_attack
 
-app = FastAPI(title="Arbitrum Nitro Guardian", version="2.0-institutional")
+app = FastAPI(title="Arbitrum Nitro Guardian", version="2.0")
 sensor = ArbitrumTelemetrySensor()
 engine = ArbitrumRiskEngine()
 breaker = ArbitrumCircuitBreaker()
@@ -27,7 +27,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Arbitrum Nitro Guardian | Institutional L2 Sentinel</title>
+    <title>Arbitrum Nitro Guardian | L2 Invariant Sentinel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -54,7 +54,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         <h1 class="text-xl font-bold tracking-tight text-white">ARBITRUM NITRO GUARDIAN</h1>
                         <span class="text-xs bg-cyan-950 text-cyan-400 border border-cyan-700/60 px-2 py-0.5 rounded-full font-mono font-semibold">L2 NITRO FCFS</span>
                     </div>
-                    <p class="text-xs text-slate-400">Autonomous Sub-45ms Invariant Sentinel | Port 5056</p>
+                    <p class="text-xs text-slate-400">Autonomous Invariant Sentinel | Port 5056</p>
                 </div>
             </div>
 
@@ -297,12 +297,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- Institutional Legal Compliance & Risk Mitigation Section -->
+        <!-- Legal Compliance & Risk Mitigation Section -->
         <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 text-xs text-slate-400 space-y-3">
             <div class="flex items-center justify-between border-b border-slate-800 pb-2">
                 <h4 class="font-bold text-slate-200 uppercase tracking-wider flex items-center">
                     <i class="fa-solid fa-scale-balanced text-cyan-400 mr-2"></i>
-                    MARCO LEGAL INSTITUCIONAL Y LIMITACIÓN DE RESPONSABILIDAD (TÉRMINOS Y CONDICIONES)
+                    MARCO LEGAL Y LIMITACIÓN DE RESPONSABILIDAD (TÉRMINOS Y CONDICIONES)
                 </h4>
                 <span class="text-slate-500 font-mono">Ref: LEGAL.md</span>
             </div>
@@ -339,7 +339,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     <!-- Footer -->
     <footer class="border-t border-slate-900 bg-slate-950 py-4 text-center text-xs text-slate-500">
-        <p>Arbitrum Nitro Guardian v2.0-institutional | Dedicated L2 Security Architecture | Developed by Luis Aguilar (@luis3m)</p>
+        <p>Arbitrum Nitro Guardian v2.0 | Dedicated L2 Security Architecture | Developed by Luis Aguilar (@luis3m)</p>
     </footer>
 
     <script>
@@ -347,11 +347,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             try {
                 const res = await fetch('/api/telemetry');
                 const data = await res.json();
-                document.getElementById('metric-block').innerText = '#' + data.block_number.toLocaleString();
-                document.getElementById('metric-txs').innerText = data.tx_count;
-                document.getElementById('metric-rpc-latency').innerText = data.rpc_latency_ms + 'ms';
+                document.getElementById('metric-block').innerText = data.block_number ? '#' + data.block_number.toLocaleString() : 'OFFLINE';
+                document.getElementById('metric-txs').innerText = (data.tx_count !== null && data.tx_count !== undefined) ? data.tx_count : '--';
+                document.getElementById('metric-rpc-latency').innerText = data.rpc_latency_ms ? data.rpc_latency_ms + 'ms' : '--';
                 document.getElementById('badge-rpc-tier').innerText = data.rpc_tier || 'PRIMARY_DEDICATED';
-                document.getElementById('metric-base-fee').innerText = data.base_fee_gwei + ' Gwei';
+                document.getElementById('metric-base-fee').innerText = data.base_fee_gwei ? data.base_fee_gwei + ' Gwei' : '--';
             } catch (e) {
                 console.error("Telemetry fetch error:", e);
             }

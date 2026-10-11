@@ -1,5 +1,5 @@
 """
-Arbitrum Nitro Guardian - Institutional Security Audit Suite (v3.0)
+Arbitrum Nitro Guardian - Security Audit Suite (v3.0)
 Validates all 5 Auditor Vectors:
 1. ZERO 256-bit Arithmetic Overflow with FullMath.mulDiv (tested with 10M WETH and 30B USDC).
 2. Anti-Sybil Escape Hatch: Reverts LP token transfers during pause, preventing wash-trading evasion.
@@ -161,6 +161,31 @@ class TestArbitrumAuditV3(unittest.TestCase):
         is_healthy_c = (seq_up_answer == 0) and ((current_time - started_at_c) >= grace_period)
         self.assertTrue(is_healthy_c) # Grace period cleared!
         print("[*] Test 6 OK: Chainlink Sequencer Uptime Feed & 3600s Grace Period mathematically validated.")
+
+    def test_07_honest_fallback_zero_fake_numbers(self):
+        """K-2 (a): Fallback when all RPCs fail must report OFFLINE with ZERO fabricated numbers."""
+        from unittest.mock import patch
+        with patch.object(self.sensor, "_post_rpc", return_value=(None, 999.0, "https://arb1.arbitrum.io/rpc")):
+            summary = self.sensor.get_latest_block_summary()
+            self.assertEqual(summary["status"], "OFFLINE")
+            self.assertIsNone(summary["block_number"])
+            self.assertIsNone(summary["tx_count"])
+            self.assertIsNone(summary["gas_used"])
+            self.assertIsNone(summary["gas_utilization_pct"])
+            self.assertIsNone(summary["base_fee_gwei"])
+            self.assertIsNone(summary["rpc_latency_ms"])
+            self.assertEqual(summary["error"], "ALL_RPC_ENDPOINTS_FAILED")
+        print("[*] Test 7 OK: Honest fallback verified - zero fabricated numbers.")
+
+    def test_08_pool_catalog_labeled_static_demo(self):
+        """K-2 (c): Catalog pools must be explicitly labeled as static demo, not live streaming telemetry."""
+        pools = self.sensor.get_all_pools()
+        self.assertGreater(len(pools), 0)
+        for pool in pools:
+            self.assertEqual(pool["catalog_type"], "CATÁLOGO ESTÁTICO DE DEMO — NO ES TELEMETRÍA")
+            self.assertEqual(pool["telemetry_source"], "STATIC_CATALOG_ESTIMATE")
+        print("[*] Test 8 OK: Static demo pool catalog honest labeling verified.")
+
 
 if __name__ == "__main__":
     unittest.main()

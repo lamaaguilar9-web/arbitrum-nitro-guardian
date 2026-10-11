@@ -1,5 +1,5 @@
 """
-Arbitrum Nitro Guardian - Dedicated L2 Autonomous Emergency Dispatcher (v2.1 Institutional)
+Arbitrum Nitro Guardian - Dedicated L2 Autonomous Emergency Dispatcher (v2.1)
 Implements:
 1. Dynamic P95-Percentile Gas Escalator for L1/L2 Congestion (+30 to +100 Gwei during panics).
 2. Realistic Network Transit Latency Modeling (Sequencer RTT 15-35ms + Invariant compute <0.05ms).
@@ -23,7 +23,7 @@ class ArbitrumCircuitBreaker:
         self.tripped_at: Optional[float] = None
         self.incident_history = []
         
-        # Institutional Addresses
+        # Governance & Protocol Addresses
         self.guardian_bot_address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
         self.gnosis_safe_governance = "0x1b793E4923774423457917228833983216892416"
         self.contract_address = "0x3F8a928F6b27D9503E3f6c88863b15Fe98516F42"
