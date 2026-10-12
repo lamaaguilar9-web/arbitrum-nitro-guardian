@@ -131,8 +131,7 @@ class ArbitrumCircuitBreaker:
         simulated_sequencer_rtt_ms: float = 28.5
     ) -> Dict[str, Any]:
         """
-        Evaluates risk and models real-world sequencer dispatch latency.
-        Compute latency (<0.05ms) + Realistic Sequencer Network RTT (20-35ms) = ~30-42ms total SLA.
+        Evaluates risk telemetry and coordinates autonomous circuit breaker dispatch.
         """
         start_time = time.perf_counter()
         threat_score = evaluation.get("threat_score", 0.0)

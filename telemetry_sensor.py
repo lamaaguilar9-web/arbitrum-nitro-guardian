@@ -128,13 +128,15 @@ class ArbitrumTelemetrySensor:
                 self.trigger_manual_failover()
             attempts += 1
 
-        return None, 999.0, self.get_active_rpc_url()
+        return None, None, self.get_active_rpc_url()
 
     def get_chainlink_sequencer_status(self) -> Dict[str, Any]:
         """
-        K-2: Queries live Chainlink Arbitrum Sequencer Uptime Feed (0xFdB631F5EE196F0ed6FAa767959853A9F217697D).
+        K-2 / A2-1: Queries live Chainlink Arbitrum Sequencer Uptime Feed (0xFdB631F5EE196F0ed6FAa767959853A9F217697D).
         latestRoundData() selector = 0xfeaf968c
         Returns answer == 0 (UP) or answer == 1 (DOWN).
+        Enforces 3600s grace period after restart: if answer == 0 but (now - started_at) < 3600s,
+        status is GRACE_PERIOD and is_healthy is False.
         """
         payload = {
             "to": CHAINLINK_SEQUENCER_UPTIME_FEED,
@@ -147,11 +149,32 @@ class ArbitrumTelemetrySensor:
                 answer = int(answer_hex, 16)
                 started_at_hex = res[2 + 128:2 + 192] if len(res) >= 194 else "0x0"
                 started_at = int(started_at_hex, 16)
-                status_desc = "UP" if answer == 0 else "DOWN"
+
+                current_time = int(time.time())
+                grace_period_seconds = 3600
+                time_since_restart = current_time - started_at
+
+                if answer == 1:
+                    status_desc = "DOWN"
+                    is_healthy = False
+                elif answer == 0:
+                    if time_since_restart < grace_period_seconds:
+                        status_desc = "GRACE_PERIOD"
+                        is_healthy = False
+                    else:
+                        status_desc = "UP"
+                        is_healthy = True
+                else:
+                    status_desc = "INVALID_ANSWER"
+                    is_healthy = False
+
                 return {
                     "status": status_desc,
                     "answer": answer,
                     "started_at": started_at,
+                    "time_since_restart": max(0, time_since_restart),
+                    "grace_period_remaining_s": max(0, grace_period_seconds - time_since_restart) if (answer == 0 and time_since_restart < grace_period_seconds) else 0,
+                    "is_healthy": is_healthy,
                     "verified_onchain": True
                 }
             except Exception as e:
@@ -160,6 +183,9 @@ class ArbitrumTelemetrySensor:
             "status": "UNAVAILABLE",
             "answer": None,
             "started_at": None,
+            "time_since_restart": None,
+            "grace_period_remaining_s": None,
+            "is_healthy": False,
             "verified_onchain": False
         }
 
@@ -172,11 +198,11 @@ class ArbitrumTelemetrySensor:
             gas_used = int(result.get("gasUsed", "0x0"), 16)
             gas_limit = int(result.get("gasLimit", "0x1"), 16)
             txs = len(result.get("transactions", []))
-            base_fee_hex = result.get("baseFeePerGas", "0x0")
-            base_fee_gwei = round(int(base_fee_hex, 16) / 1e9, 4) if base_fee_hex else 0.01
+            base_fee_hex = result.get("baseFeePerGas")
+            base_fee_gwei = round(int(base_fee_hex, 16) / 1e9, 4) if (base_fee_hex and base_fee_hex != "0x0") else None
 
             seq_info = self.get_chainlink_sequencer_status()
-            seq_status = f"HEALTHY_ACTIVE ({seq_info['status']})" if seq_info.get("verified_onchain") else "RPC_FALLBACK"
+            seq_status = f"HEALTHY_ACTIVE ({seq_info['status']})" if (seq_info.get("verified_onchain") and seq_info.get("is_healthy")) else ("DEGRADED (" + seq_info.get("status", "OFFLINE") + ")" if seq_info.get("verified_onchain") else "RPC_FALLBACK")
 
             return {
                 "status": "online",
@@ -221,7 +247,7 @@ class ArbitrumTelemetrySensor:
         """
         pool = self.pools.get(pool_name)
         if not pool:
-            pool = list(self.pools.values())[0]
+            raise KeyError(f"Pool '{pool_name}' not found in registered catalog. Available pools: {list(self.pools.keys())}")
         return dict(pool)
 
     def get_all_pools(self) -> List[Dict[str, Any]]:
