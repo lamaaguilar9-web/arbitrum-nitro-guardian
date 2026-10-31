@@ -9,7 +9,7 @@
   },
   "access_control_segregation": {
     "PAUSER_ROLE": {
-      "assigned_to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "assigned_to": "0x15C42d6E839182045f1248030fEF310b3cF3d74e",
       "privilege_scope": "Granular pausePool() ONLY. No asset movement, no unpause."
     },
     "UNPAUSER_ROLE": {
